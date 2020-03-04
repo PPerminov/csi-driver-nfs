@@ -1,8 +1,4 @@
-FROM centos:7.4.1708
-
-# Copy nfsplugin from build _output directory
-COPY bin/nfsplugin /nfsplugin
-
-RUN yum -y install nfs-utils && yum -y install epel-release && yum -y install jq && yum clean all
-
+FROM centos:7.7.1908
 ENTRYPOINT ["/nfsplugin"]
+RUN yum -y install nfs-utils epel-release && yum -y install jq && yum clean all
+COPY bin/nfsplugin /nfsplugin

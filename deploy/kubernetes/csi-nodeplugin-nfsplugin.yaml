@@ -1,7 +1,7 @@
 # This YAML file contains driver-registrar & csi driver nodeplugin API objects
 # that are necessary to run CSI nodeplugin for nfs
 kind: DaemonSet
-apiVersion: apps/v1beta2
+apiVersion: apps/v1
 metadata:
   name: csi-nodeplugin-nfsplugin
 spec:
@@ -17,6 +17,7 @@ spec:
       hostNetwork: true
       containers:
         - name: node-driver-registrar
+          imagePullPolicy: "Always"
           image: quay.io/k8scsi/csi-node-driver-registrar:v1.0.2
           lifecycle:
             preStop:
@@ -42,7 +43,7 @@ spec:
             capabilities:
               add: ["SYS_ADMIN"]
             allowPrivilegeEscalation: true
-          image: quay.io/k8scsi/nfsplugin:v1.0.0
+          image: pavelatcai/nfs:latest
           args :
             - "--nodeid=$(NODE_ID)"
             - "--endpoint=$(CSI_ENDPOINT)"
@@ -53,7 +54,7 @@ spec:
                   fieldPath: spec.nodeName
             - name: CSI_ENDPOINT
               value: unix://plugin/csi.sock
-          imagePullPolicy: "IfNotPresent"
+          imagePullPolicy: "Always"
           volumeMounts:
             - name: plugin-dir
               mountPath: /plugin

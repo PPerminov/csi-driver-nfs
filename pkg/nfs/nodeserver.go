@@ -18,8 +18,14 @@ package nfs
 
 import (
 	"fmt"
+	"github.com/sirupsen/logrus"
+	"io/ioutil"
+	"log"
 	"os"
+	"path"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/golang/glog"
 
@@ -31,8 +37,9 @@ import (
 )
 
 type nodeServer struct {
-	Driver  *nfsDriver
-	mounter mount.Interface
+	Driver        *nfsDriver
+	mounter       mount.Interface
+	createFolders bool
 }
 
 func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolumeRequest) (*csi.NodePublishVolumeResponse, error) {
@@ -60,8 +67,18 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublis
 
 	s := req.GetVolumeContext()["server"]
 	ep := req.GetVolumeContext()["share"]
+	ns.createFolders, err = strconv.ParseBool(req.GetVolumeContext()["createFolders"])
+	if err != nil {
+		ns.createFolders = false
+	}
 	source := fmt.Sprintf("%s:%s", s, ep)
 
+	if ns.createFolders {
+		err = ns.CreateFolders(source, mo)
+		if err != nil {
+			return nil, err
+		}
+	}
 	err = ns.mounter.Mount(source, targetPath, "nfs", mo)
 	if err != nil {
 		if os.IsPermission(err) {
@@ -137,4 +154,59 @@ func (ns *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVol
 
 func (ns *nodeServer) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolumeRequest) (*csi.NodeExpandVolumeResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "")
+}
+
+func (ns *nodeServer) CreateFolders(share string, mo []string) (err error) {
+	loggeer := logrus.New()
+	loggeer.Level = logrus.WarnLevel
+	if os.Getenv("DEBUG") == "1" {
+		loggeer.Level = logrus.DebugLevel
+	}
+
+	targetPath, err := ioutil.TempDir("/tmp", "FailoCreator")
+	loggeer.Debug(targetPath, err)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	permissions := os.ModePerm
+	loggeer.Debug(permissions)
+
+	splitted1 := strings.Split(share, ":")
+	loggeer.Debug(splitted1)
+
+	splitted2 := strings.Split(splitted1[1], "/")[1:]
+	loggeer.Debug(splitted2)
+
+	creationMount := fmt.Sprintf("%s:/%s", splitted1[0], splitted2[0])
+	loggeer.Debug(creationMount)
+
+	pathToCreate := strings.Join(splitted2[1:], "/")
+	loggeer.Debug(pathToCreate)
+
+	err = ns.mounter.Mount(creationMount, targetPath, "nfs", mo)
+	loggeer.Debug("mounteing", err)
+	if err != nil {
+		return
+	}
+
+	err = os.MkdirAll(path.Join(targetPath, pathToCreate), permissions)
+	loggeer.Debug("Makedirs", err)
+	if err != nil {
+		return
+	}
+
+	for tryings := 0; tryings < 5; tryings++ {
+		err = mount.CleanupMountPoint(targetPath, ns.mounter, false)
+		loggeer.Debug("Unmounting", tryings, err)
+		if err == nil {
+			break
+		}
+		time.Sleep(2)
+	}
+
+	err = os.RemoveAll(targetPath)
+	loggeer.Debug(err)
+
+	return
 }

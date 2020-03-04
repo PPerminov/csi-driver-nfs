@@ -1,0 +1,59 @@
+# SC is just for example. You can use any other way to bing PV and PVC
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: standard_nfs
+provisioner: NFS
+reclaimPolicy: Retain
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: somenewstuff
+  labels:
+    name: somenewstuff
+spec:
+  storageClassName: standard_nfs
+  accessModes:
+    - ReadWriteMany
+  capacity:
+    storage: 100Gi
+  csi:
+    driver: csi-nfsplugin
+    volumeHandle: data-id
+    volumeAttributes:
+      server: 192.168.99.1 # NFS server address
+      share: /share/This_folder_must_not_exist #NFS Share
+      createFolders: "true" # If true then folder will be created
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: somenewstuff
+spec:
+  storageClassName: standard_nfs
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 100Gi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx
+spec:
+  containers:
+    - image: nginx
+      imagePullPolicy: Always
+      name: nginx
+      ports:
+        - containerPort: 80
+          protocol: TCP
+      volumeMounts:
+        - mountPath: /var/www
+          name: somenewstuff
+  volumes:
+    - name: somenewstuff
+      persistentVolumeClaim:
+        claimName: somenewstuff
